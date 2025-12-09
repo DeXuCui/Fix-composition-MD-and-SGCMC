@@ -1,0 +1,465 @@
+variable    i loop 10
+variable    seed  index  6671
+
+
+variable    Latt_Cons equal       3.67345 
+variable    goal_temp equal       1646
+
+variable    ratio                 equal 0.9925628
+
+variable    goal_temp_2 equal       1350
+
+units 		    metal
+dimension	    3
+boundary 	    p	p	p
+atom_style	    atomic
+atom_modify     map hash sort 1000 1.0   ########加速
+neighbor        2 bin
+neigh_modify    every 5 delay 0 check yes
+
+
+variable   LX1          equal  29.3876      ##8
+variable   LY1          equal  29.3876      ##8
+variable   LZ1          equal  205.7132     ##56
+
+
+lattice		fcc ${Latt_Cons} origin 0.1 0.1 0.1 orient x 1 0 0 orient y 0 1 0 orient z 0 0 1
+
+##################晶格常数必须准确，偏移一定距离###################
+
+region		box   block  0 ${LX1}  0 ${LY1} -102.8566 102.8566 units box
+
+
+create_box	    2 box
+create_atoms    1 box
+
+mass            1 58.6934
+mass            2 63.546
+
+
+variable     lowborder  equal  -6*${Latt_Cons}
+variable     upborder  equal    6*${Latt_Cons}
+variable     midd_low   equal  -10
+variable     midd_up    equal   10
+
+
+region        bottom block INF INF INF INF INF ${lowborder}    units box
+region        middle block INF INF INF INF ${lowborder} ${upborder}  units box
+region        top    block INF INF INF INF ${upborder} INF  units box
+region        pin block INF INF INF INF ${midd_low} ${midd_up} units box
+
+
+region	1 block  INF INF INF INF   0 10 units box
+region	2 block  INF INF INF INF   10 20 units box
+region	3 block  INF INF INF INF   20 30 units box
+region	4 block  INF INF INF INF   30 40 units box
+region	5 block  INF INF INF INF  40 50 units box
+region	6 block  INF INF INF INF  50 60 units box
+region	7 block  INF INF INF INF  60 70 units box
+region	8 block  INF INF INF INF  70 80 units box
+region	9 block  INF INF INF INF  80 90 units box
+region	10 block INF INF INF INF  90 INF units box
+
+region	11 block INF INF INF INF  -10 0 units box
+region	12 block  INF INF INF INF -20 -10 units box
+region	13 block  INF INF INF INF -30 -20 units box
+region	14 block  INF INF INF INF -40 -30 units box
+region	15 block  INF INF INF INF -50 -40 units box
+region	16 block  INF INF INF INF -60 -50 units box
+region	17 block  INF INF INF INF -70 -60 units box
+region	18 block  INF INF INF INF -80 -70 units box
+region	19 block  INF INF INF INF -90 -80 units box
+region	20 block  INF INF INF INF INF -90 units box
+
+
+group        top  region top
+group        bottom  region bottom
+group        melt union top bottom
+group        solid  region middle
+
+group        pin  region pin
+
+group	1 dynamic all region 1
+group	2 dynamic all region 2
+group	3 dynamic all region 3
+group	4 dynamic all region 4
+group	5 dynamic all region 5
+group	6 dynamic all region 6
+group	7 dynamic all region 7
+group	8 dynamic all region 8
+group	9 dynamic all region 9
+group	10 dynamic all region 10
+group	11 dynamic all region 11
+group	12 dynamic all region 12
+group	13 dynamic all region 13
+group	14 dynamic all region 14
+group	15 dynamic all region 15
+group	16 dynamic all region 16
+group	17 dynamic all region 17
+group	18 dynamic all region 18
+group	19 dynamic all region 19
+group	20 dynamic all region 20
+
+
+
+# ------------------------ FORCE FIELDS ------------------------------
+pair_style	eam
+pair_coeff	1 1 Ni_smf7.eam 
+pair_coeff	2 2 Cu_smf7.eam 
+
+group       Ni  type   1   
+group       Cu  type   2
+
+#Defining variables
+variable N equal step
+variable pote equal pe
+variable Etotal equal etotal
+variable T equal temp
+variable Press equal press
+variable V equal vol
+
+
+
+#***********调整成分************************
+set  group melt type/ratio 2 0.25 223608      ######## 随机数2
+set  group solid type/ratio 2 0.25 225435     ######## 随机数3
+
+velocity all create ${goal_temp} ${seed} dist gaussian units box  ######## 随机数1
+
+timestep 0.001
+thermo   1000
+thermo_style custom step lx ly lz press pe etotal vol temp
+dump     1 all custom 1000 1nmbin_relax_guding_${goal_temp}.lammps id type x y z 
+
+#*************************固定solid原子***************** 
+fix    01 solid setforce 0.0 0.0 0.0
+fix    02 solid temp/rescale 10 ${goal_temp} ${goal_temp} 10 1
+#*****************************************************
+
+fix    003 melt npt temp  ${goal_temp} 2400 $(100.0*dt) z 0 0 1 drag 1 #npzt熔化
+run    50000
+unfix   003
+
+fix    004 melt npt temp  2400 ${goal_temp}  $(100.0*dt) z 0 0 1 drag 1 #npzt熔化
+run    50000
+unfix   004
+
+
+
+#***********降温************************
+fix    005 melt npt temp ${goal_temp} ${goal_temp} $(100.0*dt) z 0 0 1 drag 1 #npzt降温
+run    10000
+unfix   005
+
+#***********原子固定已解除************************
+unfix  01
+unfix  02
+
+undump  1
+
+
+
+
+reset_timestep 0
+
+#///////////////////////////整体长时弛豫/////////////////////////
+timestep  0.001
+thermo   1000
+thermo_style custom step lx ly lz press pe etotal vol temp
+
+dump     1 all custom 1000 1nmbin_dynamicGroup_${goal_temp}_${i}.lammps id type x y z 
+
+fix	1 1 temp/berendsen ${goal_temp} ${goal_temp} 0.1
+fix	2 2 temp/berendsen ${goal_temp} ${goal_temp} 0.1
+fix	3 3 temp/berendsen ${goal_temp} ${goal_temp} 0.1
+fix	4 4 temp/berendsen ${goal_temp} ${goal_temp} 0.1
+fix	5 5 temp/berendsen ${goal_temp} ${goal_temp} 0.1
+fix	6 6 temp/berendsen ${goal_temp} ${goal_temp} 0.1
+fix	7 7 temp/berendsen ${goal_temp} ${goal_temp} 0.1
+fix	8 8 temp/berendsen ${goal_temp} ${goal_temp} 0.1
+fix	9 9 temp/berendsen ${goal_temp} ${goal_temp} 0.1
+fix	10 10 temp/berendsen ${goal_temp} ${goal_temp} 0.1
+fix	11 11 temp/berendsen ${goal_temp} ${goal_temp} 0.1
+fix	12 12 temp/berendsen ${goal_temp} ${goal_temp} 0.1
+fix	13 13 temp/berendsen ${goal_temp} ${goal_temp} 0.1
+fix	14 14 temp/berendsen ${goal_temp} ${goal_temp} 0.1
+fix	15 15 temp/berendsen ${goal_temp} ${goal_temp} 0.1
+fix	16 16 temp/berendsen ${goal_temp} ${goal_temp} 0.1
+fix	17 17 temp/berendsen ${goal_temp} ${goal_temp} 0.1
+fix	18 18 temp/berendsen ${goal_temp} ${goal_temp} 0.1
+fix	19 19 temp/berendsen ${goal_temp} ${goal_temp} 0.1
+fix	20 20 temp/berendsen ${goal_temp} ${goal_temp} 0.1
+
+fix      003 all npt temp  ${goal_temp} ${goal_temp} $(100.0*dt) z 0 0 1 drag 1
+
+fix      00 pin recenter INIT INIT INIT 
+fix      01 pin momentum 1 linear 1 1 1  
+
+run      30000
+
+unfix 1
+unfix 2
+unfix 3
+unfix 4
+unfix 5
+unfix 6
+unfix 7
+unfix 8
+unfix 9
+unfix 10
+unfix 11
+unfix 12
+unfix 13
+unfix 14
+unfix 15
+unfix 16
+unfix 17
+unfix 18
+unfix 19
+unfix 20
+
+unfix    003
+
+unfix    00
+unfix    01
+
+undump   1
+
+
+
+change_box all x scale ${ratio} y scale ${ratio} remap
+
+
+
+compute         KE   all ke/atom 
+variable        KB   equal 8.625e-5 
+variable        TEMP atom c_KE/1.5/${KB} 
+
+region  1 delete
+region  2 delete
+region  3 delete
+region  4 delete
+region  5 delete
+region  6 delete
+region  7 delete
+region  8 delete
+region  9 delete
+region  10 delete
+region  11 delete
+region  12 delete
+region  13 delete
+region  14 delete
+region  15 delete
+region  16 delete
+region  17 delete
+region  18 delete
+region  19 delete
+region  20 delete
+
+
+
+group Ni delete
+group Cu delete
+
+group	1 delete
+group	2 delete
+group	3 delete
+group	4 delete
+group	5 delete
+group	6 delete
+group	7 delete
+group	8 delete
+group	9 delete
+group	10 delete
+group	11 delete
+group	12 delete
+group	13 delete
+group	14 delete
+group	15 delete
+group	16 delete
+group	17 delete
+group	18 delete
+group	19 delete
+group	20 delete
+
+group	solid delete
+group	melt delete
+group	top delete
+group   bottom delete
+
+
+region	1 block  INF INF INF INF  20 25 units box
+region	2 block  INF INF INF INF  25 30 units box
+region	3 block  INF INF INF INF  30 35 units box
+region	4 block  INF INF INF INF  35 40 units box
+region	5 block  INF INF INF INF  40 45 units box
+region	6 block INF INF INF INF   45 50 units box
+region	7 block INF INF INF INF   50 55 units box
+region	8 block  INF INF INF INF  55 60 units box
+region	9 block  INF INF INF INF  60 65 units box
+region	10 block  INF INF INF INF 65 70 units box
+
+
+
+region	11 block  INF INF INF INF  -25 -20 units box
+region	12 block  INF INF INF INF  -30 -25 units box
+region	13 block  INF INF INF INF  -35 -30 units box
+region	14 block  INF INF INF INF  -40 -35 units box
+region	15 block  INF INF INF INF  -45 -40 units box
+region	16 block INF INF INF INF  -50 -45 units box
+region	17 block INF INF INF INF  -55 -50 units box
+region	18 block  INF INF INF INF -60 -55 units box
+region	19 block  INF INF INF INF -65 -60 units box
+region	20 block  INF INF INF INF -70 -65 units box
+
+region	21 block  INF INF INF INF -20  -7 units box
+region	22 block  INF INF INF INF   -7  7 units box
+region	23 block  INF INF INF INF   7  20 units box
+
+region	24 block  INF INF INF INF 70   80 units box
+region	25 block  INF INF INF INF 80   90 units box
+region	26 block  INF INF INF INF 90   INF units box
+
+region	27 block  INF INF INF INF INF  -90 units box
+region	28 block  INF INF INF INF -90  -80 units box
+region	29 block  INF INF INF INF -80  -70 units box
+
+
+
+
+group	1 dynamic all region 1
+group	2 dynamic all region 2
+group	3 dynamic all region 3
+group	4 dynamic all region 4
+group	5 dynamic all region 5
+group	6 dynamic all region 6
+group	7 dynamic all region 7
+group	8 dynamic all region 8
+group	9 dynamic all region 9
+group	10 dynamic all region 10
+group	11 dynamic all region 11
+group	12 dynamic all region 12
+group	13 dynamic all region 13
+group	14 dynamic all region 14
+group	15 dynamic all region 15
+group	16 dynamic all region 16
+group	17 dynamic all region 17
+group	18 dynamic all region 18
+group	19 dynamic all region 19
+group	20 dynamic all region 20
+group	21 dynamic all region 21
+group	22 dynamic all region 22
+group	23 dynamic all region 23
+group	24 dynamic all region 24
+group	25 dynamic all region 25
+group	26 dynamic all region 26
+group	27 dynamic all region 27
+group	28 dynamic all region 28
+group	29 dynamic all region 29
+
+
+
+reset_timestep 0
+
+#///////////////////////////整体长时弛豫/////////////////////////
+
+
+timestep 0.001
+thermo   1000
+thermo_style custom step lx ly lz press pe etotal vol temp
+
+dump     1 all custom 400 Ni75Cu25_300K_1.lammps id type x y z v_TEMP
+
+fix	1 1 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+fix	2 2 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+fix	3 3 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+fix	4 4 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+fix	5 5 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+fix	6 6 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+fix	7 7 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+fix	8 8 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+fix	9 9 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+fix	10 10 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+fix	11 11 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+fix	12 12 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+fix	13 13 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+fix	14 14 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+fix	15 15 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+fix	16 16 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+fix	17 17 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+fix	18 18 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+fix	19 19 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+fix	20 20 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+fix	21 21 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+fix	22 22 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+fix	23 23 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+fix	24 24 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+fix	25 25 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+fix	26 26 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+fix	27 27 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+fix	28 28 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+fix	29 29 temp/berendsen ${goal_temp_2} ${goal_temp_2} 0.01
+
+
+
+fix      003 all npt temp  ${goal_temp_2} ${goal_temp_2} 1000 z 0 0 1 drag 1
+
+fix      00 pin recenter INIT INIT INIT 
+fix      01 pin momentum 1 linear 1 1 1  
+
+ 
+run       40000
+
+unfix 1
+unfix 2
+unfix 3
+unfix 4
+unfix 5
+unfix 6
+unfix 7
+unfix 8
+unfix 9
+unfix 10
+unfix 11
+unfix 12
+unfix 13
+unfix 14
+unfix 15
+unfix 16
+unfix 17
+unfix 18
+unfix 19
+unfix 20
+unfix 21
+unfix 22
+unfix 23
+unfix 24
+unfix 25
+unfix 26
+unfix 27
+unfix 28
+unfix 29
+
+
+unfix    003
+
+unfix    00
+unfix    01
+
+undump   1
+
+
+
+
+clear   
+next    i
+next    seed
+jump    300K_CuNi_0.5nmbin.in
+quit
+
+
+
+
+
+
+
