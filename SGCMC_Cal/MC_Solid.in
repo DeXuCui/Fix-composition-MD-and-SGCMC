@@ -1,0 +1,88 @@
+variable    i loop 4
+
+variable    seed index  -0.58 -0.59 -0.61 -0.63 
+variable goal_temp equal 1500
+
+#**************************************************************************
+units 		    metal
+dimension	    3
+boundary 	    p	p	p
+atom_style	    atomic
+atom_modify     map hash sort 1000 1.0
+neighbor        2 bin
+
+read_data      NiCu_atoms.1
+
+# ------------------------------ FORCE FIELDS ------------------------------
+pair_style	eam
+pair_coeff	1 1 Ni_smf7.eam 
+pair_coeff	2 2 Cu_smf7.eam 
+
+group       Ni  type   1   
+group       Cu  type   2
+
+#Defining variables
+variable N equal step
+variable pote equal pe
+variable Etotal equal etotal
+variable T equal temp
+variable Press equal press
+variable V equal vol
+
+
+
+
+velocity all create ${goal_temp} 5856676 dist gaussian units box
+
+
+
+
+reset_timestep 0
+timestep 0.002
+thermo   1000
+thermo_style custom step lx ly lz press temp
+
+
+
+
+fix    3 all npt temp  ${goal_temp} ${goal_temp} $(100.0*dt) iso 0 0 1 drag 1 
+run    200000
+unfix  3
+
+
+
+reset_timestep    0
+timestep          0.001
+thermo            1000
+thermo_style      custom step lx ly lz press temp 
+fix               001 all npt temp  ${goal_temp} ${goal_temp} $(100.0*dt) iso 0 0 1 drag 1
+fix               PreSGMC all atom/swap 1 200 34555 ${goal_temp} semi-grand yes types 1 2 mu ${seed} 0
+run               500000
+unfix             001
+unfix             PreSGMC
+
+
+
+reset_timestep 0
+timestep 0.002
+
+thermo   1000
+thermo_style custom step lx ly lz press temp 
+
+dump   result all custom 500 MC_soliid_(${seed}).lammps id type x y z
+fix     02   all npt temp  ${goal_temp} ${goal_temp} $(100.0*dt) iso 0 0 1 drag 1
+fix     SGMC all atom/swap 1 200 34555 ${goal_temp} semi-grand yes types 1 2 mu ${seed} 0
+
+run     500000
+unfix   02
+unfix   SGMC
+undump  result
+
+
+
+clear   
+next    i
+next    seed
+jump    1500_MC_solid.in
+quit
+
